@@ -4,6 +4,7 @@ import os
 
 from pprint import pprint
 from enum import Enum
+import sqlite3
 from database.database import Database
 from typing import Tuple, List, Dict, Any
 
@@ -116,15 +117,20 @@ def calculate_cost(phone_type: str, quantity: int, options: int) -> Tuple[float,
         PhoneOptions.OPTION_NULL.value: 0
     }[options]
 
-    total_cost_before_vat: Any = (base_cost + setup_cost) * quantity
+    item_price: Any = base_cost * quantity
+    setup_opt_price: Any = setup_cost * quantity
+
+    total_cost_before_vat: Any = item_price + setup_opt_price
     vat: Any = total_cost_before_vat * VAT_RATE
     total_cost_with_vat: Any = total_cost_before_vat + vat
+
+    print(total_cost_before_vat, vat, total_cost_with_vat)
 
     return round(float(total_cost_before_vat), 2), round(float(vat), 2), round(float(total_cost_with_vat), 2)
 
 def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
                    selected_option: int, quantity_num: int, 
-                   vat: float, total_cost: float, total_with_vat: float) -> None:
+                   vat: float, total_cost: float, total_with_vat: float) -> bool:
     """Insert an invoice into the database
 
     Args:
@@ -148,8 +154,14 @@ def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
         "total_cost_vat": total_with_vat,
     }
 
-    with Database("customers.db") as db:
-        db.insert("invoices", data)
+    try:
+        with Database("customers.db") as db:
+            db.insert("invoices", data)
+
+        return True
+    except sqlite3.IntegrityError as e:
+        print(f"Error user already exists: {e}")
+        return False
 
 def handle_customer() -> None:
     """Handles user input"""
@@ -201,11 +213,15 @@ def handle_customer() -> None:
             f"Total Cost including VAT: £{total_with_vat:.2f}"
             )
         
-        insert_invoice(company_name, company_num, smart_phone_type, 
+        if insert_invoice(company_name, company_num, smart_phone_type, 
                        selected_option, quantity_num,
-                        vat, total_cost, total_with_vat)
-        
-        input()
+                        vat, total_cost, total_with_vat) == True:
+            input()
+            return
+        else:
+            print("ERR")
+            input()
+            return
         
     except ValueError as e:
         print(f"Error => {e}")
@@ -269,7 +285,7 @@ def init_database() -> None:
 CREATE TABLE IF NOT EXISTS invoices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_name TEXT NOT NULL UNIQUE,
-    company_num TEXT NOT NULL UNIQUE,
+    company_num TEXT NOT NULL,
     phone_type TEXT NOT NULL,
     phone_opt INTEGER NOT NULL,
     quantity INTEGER NOT NULL,
