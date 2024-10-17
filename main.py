@@ -138,9 +138,6 @@ def calculate_cost(phone_type: str, quantity: int, options: int) -> Tuple[float,
     vat: Any = total_cost_before_vat * VAT_RATE
     total_cost_with_vat: Any = total_cost_before_vat + vat
 
-    vat = total_cost_before_vat * VAT_RATE
-    total_cost_with_vat = total_cost_before_vat + vat
-
     return round(float(setup_opt_price), 2), round(float(total_cost_before_vat), 2), round(float(vat), 2), round(float(total_cost_with_vat), 2)
 
 def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
