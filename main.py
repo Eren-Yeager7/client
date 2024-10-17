@@ -2,10 +2,10 @@ from __future__ import print_function, unicode_literals
 import re
 import os
 
-from pprint import pprint
 from enum import Enum
+import sqlite3
 from database.database import Database
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Any
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
@@ -142,22 +142,25 @@ def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
         "total_cost_vat": total_with_vat,
     }
 
-    with Database("customers.db") as db:
-        db.insert("invoices", data)
+    try:
+        with Database("customers.db") as db:
+            db.insert("invoices", data)
+    except sqlite3.IntegrityError as e:
+        print(f"Error inserting {e}")
 
 def handle_customer() -> None:
     """Handles user input """
     company_name: str = inquirer.text(message="Company Name =>", validate=EmptyInputValidator()).execute()
     company_num: str = inquirer.text(message="Company phone number => ", validate=PhoneNumberValidator()).execute()
 
-    smart_phone_type = inquirer.select(
+    smart_phone_type: Any = inquirer.select(
         message="Select phone type =>",
         choices=PHONE_CHOICES,
         transformer=lambda result: "Selected %s phone type" % (result),
         default=None
     ).execute()
 
-    smart_phone_options = inquirer.checkbox(
+    smart_phone_options: Any = inquirer.checkbox(
         message="Smartphone options (Optional) =>",
         choices=[
             Choice(value=PhoneOptions.OPTION_A.value, name="Option A (5 apps)"),
@@ -173,7 +176,7 @@ def handle_customer() -> None:
     # select the option in integer format from the enum
     selected_option: int = int(smart_phone_options[0]) if smart_phone_options else PhoneOptions.OPTION_NULL.value
 
-    quantity_num = inquirer.number(
+    quantity_num: Any = inquirer.number(
         message="Quantity of phones =>",
         min_allowed=5,
         max_allowed=100,
@@ -182,6 +185,7 @@ def handle_customer() -> None:
     ).execute()
 
     try:
+        # all floats
         total_cost, vat, total_with_vat = calculate_cost(smart_phone_type, quantity_num, selected_option)
         print(
             "=[NEW INVOICE]=\n"
