@@ -12,6 +12,9 @@ from InquirerPy.base.control import Choice
 from InquirerPy.validator import EmptyInputValidator
 from prompt_toolkit.validation import ValidationError, Validator
 
+"""
+Constant variables identified by the CAPATILISATION
+"""
 PHONE_TYPES: List[Tuple[str, int]] = [
     ("Basic", 250),
     ("Standard", 450),
@@ -20,6 +23,10 @@ PHONE_TYPES: List[Tuple[str, int]] = [
 VAT_RATE: float = 0.2
 PHONE_CHOICES: List[Choice] = [ Choice(value=x[0], name=f"{x[0]} £{x[1]}") for x in PHONE_TYPES ]
 
+"""
+Different PhoneOptions identified by an enum
+wasn't my first choice but cool that python has it
+"""
 class PhoneOptions(Enum):
     OPTION_A    = 1
     OPTION_B    = 2
@@ -30,6 +37,13 @@ class PhoneNumberValidator(Validator):
         self._message = message
 
     def validate(self, document):
+        """Validates if the phone number is greater than 0 and it matches a UK phone number regex
+        Args:
+            document (Document class): InquirerPy document all we need is text. 
+        Raises:
+            ValidationError: If the phone number is not a positive integer
+            ValidationError: If the phone number doesn't match the UK phone number regex (https://stackoverflow.com/a/44327689)
+        """
         if not len(document.text) > 0:
             raise ValidationError(
                 message=self._message,
@@ -44,6 +58,13 @@ class CommandSelectValidator(Validator):
         self._message = message
 
     def validate(self, document):
+        """Validate the command given
+
+        Args:
+            document (Document class): InquirerPy document all we need is text. 
+        Raises:
+            ValidationError: if the integer given is not 1 or 2
+        """
         if int(document.text) not in [1, 2]:
             raise ValidationError(
                 message=self._message,
@@ -79,7 +100,7 @@ class QuantityValidator(Validator):
                 cursor_position=document.cursor_position,
             )
 
-def calculate_cost(phone_type: str, quantity: int, options: int) -> Tuple[float, float, float]:
+def calculate_cost(phone_type: str, quantity: int, options: int) -> Tuple[float, float, float, float]:
     """Calculate the total cost
 
     Args:
@@ -91,7 +112,7 @@ def calculate_cost(phone_type: str, quantity: int, options: int) -> Tuple[float,
         ValueError: if phone_type is incorrect
 
     Returns:
-        Tuple[float, float, float]: The total cost before VAT, Calculated VAT, Total cost + VAT
+        Tuple[float, float, float, float]: The total cost before VAT, Calculated VAT, Total cost + VAT
     """
 
     # find the base cost of the selected phone type
@@ -103,21 +124,27 @@ def calculate_cost(phone_type: str, quantity: int, options: int) -> Tuple[float,
     quantity = int(quantity)
     options = int(options)
 
-    setup_cost = {
+    # search through a dictionary
+    setup_cost: int = {
         PhoneOptions.OPTION_A.value: 30,
         PhoneOptions.OPTION_B.value: 50,
         PhoneOptions.OPTION_NULL.value: 0
     }[options]
 
-    total_cost_before_vat = (base_cost + setup_cost) * quantity
+    item_price: Any = base_cost * quantity
+    setup_opt_price: Any = setup_cost * quantity
+
+    total_cost_before_vat: Any = item_price + setup_opt_price
+    vat: Any = total_cost_before_vat * VAT_RATE
+    total_cost_with_vat: Any = total_cost_before_vat + vat
 
     vat = total_cost_before_vat * VAT_RATE
     total_cost_with_vat = total_cost_before_vat + vat
 
-    return round(float(total_cost_before_vat), 2), round(float(vat), 2), round(float(total_cost_with_vat), 2)
+    return round(float(setup_opt_price), 2), round(float(total_cost_before_vat), 2), round(float(vat), 2), round(float(total_cost_with_vat), 2)
 
 def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
-                   selected_option: int, quantity_num: int, 
+                   selected_option: int, quantity_num: int, setup_cost_opt: float,
                    vat: float, total_cost: float, total_with_vat: float) -> None:
     """Insert an invoice into the database
 
@@ -138,6 +165,7 @@ def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
         "phone_opt": selected_option,
         "quantity": quantity_num,
         "vat": vat,
+        "total_setup_cost": setup_cost_opt,
         "total_cost": total_cost,
         "total_cost_vat": total_with_vat,
     }
@@ -145,10 +173,12 @@ def insert_invoice(company_name: str, company_num: str, smart_phone_type: str,
     try:
         with Database("customers.db") as db:
             db.insert("invoices", data)
+        return True
     except sqlite3.IntegrityError as e:
-        print(f"Error inserting {e}")
+        print(f"Error user already exists: {e}")
+        return False
 
-def handle_customer() -> None:
+def handle_customer() -> bool:
     """Handles user input """
     company_name: str = inquirer.text(message="Company Name =>", validate=EmptyInputValidator()).execute()
     company_num: str = inquirer.text(message="Company phone number => ", validate=PhoneNumberValidator()).execute()
@@ -186,7 +216,7 @@ def handle_customer() -> None:
 
     try:
         # all floats
-        total_cost, vat, total_with_vat = calculate_cost(smart_phone_type, quantity_num, selected_option)
+        setup_opt, total_cost, vat, total_with_vat = calculate_cost(smart_phone_type, quantity_num, selected_option)
         print(
             "=[NEW INVOICE]=\n"
             f"Company Name: {company_name}\n"
@@ -194,16 +224,21 @@ def handle_customer() -> None:
             f"Smart Phone Type: {smart_phone_type}\n"
             f"Smart Phone Option: {selected_option}\n"
             f"Quantity: {quantity_num}\n"
+            f"Setup costs: £{setup_opt:.2f}\n"
             f"Total Cost: £{total_cost:.2f}\n"
             f"VAT: £{vat:.2f}\n"
             f"Total Cost including VAT: £{total_with_vat:.2f}"
             )
         
-        insert_invoice(company_name, company_num, smart_phone_type, 
-                       selected_option, quantity_num,
-                        vat, total_cost, total_with_vat)
-        
-        input()
+        if insert_invoice(company_name, company_num, smart_phone_type, 
+                       selected_option, quantity_num, setup_opt,
+                        vat, total_cost, total_with_vat) == True:
+            input()
+            return
+        else:
+            print("ERROR")
+            input()
+            return
         
     except ValueError as e:
         print(f"Error => {e}")
@@ -219,14 +254,15 @@ def pretty_print_invoices(invoices: List[Tuple]):
         print("No invoices found.")
         return
 
-    # print a table like
-    print("ID | Company Name | Company Num | Phone Type | Phone Option | Quantity | VAT    | Total Cost | Total Cost with VAT")
+    # print a table like thing
+    print("ID | Company Name | Company Num | Phone Type | Phone Option | Quantity | VAT    | Setup Cost | Total Cost | Total Cost with VAT")
     print("-" * 115)  # line for separation
 
+    # because invoice is a tuple assign each value of the tuple. Example (row[0], row[1]) - (invoice_id, company_name)
     for invoice in invoices:
-        invoice_id, company_name, company_num, phone_type, phone_opt, quantity, vat, total_cost, total_with_vat = invoice
+        invoice_id, company_name, company_num, phone_type, phone_opt, quantity, vat, total_setup_cost, total_cost, total_with_vat = invoice
         print(f"{invoice_id:<2} | {company_name:<13} | {company_num:<11} | {phone_type:<10} | {phone_opt:<12} | "
-              f"{quantity:<8} | £{vat:<6.2f} | £{total_cost:<10.2f} | £{total_with_vat:<15.2f}")
+              f"{quantity:<8} | £{vat:<6.2f} | £{total_setup_cost:<10.2f} | £{total_cost:<10.2f} | £{total_with_vat:<15.2f}")
         
     input()
 
@@ -270,6 +306,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     phone_opt INTEGER NOT NULL,
     quantity INTEGER NOT NULL,
     vat FLOAT NOT NULL,
+    total_setup_cost FLOAT NOT NULL,
     total_cost FLOAT NOT NULL,
     total_cost_vat FLOAT NOT NULL
 )
@@ -282,5 +319,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-
     main()
